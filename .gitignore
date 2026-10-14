@@ -1,0 +1,25 @@
+# Виртуальное окружение
+.venv/
+venv/
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+
+# Сборка
+dist/
+build/
+*.egg-info/
+
+# Логи
+logs/
+*.log
+
+# Секреты и локальные настройки
+.env
+.env.*
+!.env.example
+
+# Временные файлы
+*.tmp
+db_meta.json
