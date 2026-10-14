@@ -10,6 +10,7 @@ from valutatrade_hub.core.exceptions import (
 )
 from valutatrade_hub.core.models import Portfolio, User, Wallet
 from valutatrade_hub.core.utils import convert_currency, validate_currency_code
+from valutatrade_hub.decorators import log_action
 from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
 
@@ -27,6 +28,7 @@ class ValutaTradeService:
     # Регистрация и вход
     # ------------------------------------------------------------------
 
+    @log_action("REGISTER")
     def register(self, username: str, password: str) -> User:
         """Зарегистрировать нового пользователя."""
         if not isinstance(username, str) or not username.strip():
@@ -55,6 +57,7 @@ class ValutaTradeService:
 
         return user
 
+    @log_action("LOGIN")
     def login(self, username: str, password: str) -> User:
         """Войти в приложение и установить текущего пользователя."""
         users = self._load_users()
@@ -138,6 +141,7 @@ class ValutaTradeService:
     # Покупка / продажа
     # ------------------------------------------------------------------
 
+    @log_action("BUY", verbose=True)
     def buy(self, currency_code: str, amount: float) -> dict[str, Any]:
         """Купить валюту, увеличив её баланс в портфеле."""
         user = self._require_login()
@@ -170,6 +174,7 @@ class ValutaTradeService:
             "estimated_usd": estimated_usd,
         }
 
+    @log_action("SELL", verbose=True)
     def sell(self, currency_code: str, amount: float) -> dict[str, Any]:
         """Продать валюту при наличии кошелька и достаточного баланса."""
         user = self._require_login()
@@ -290,12 +295,16 @@ class ValutaTradeService:
     def _save_portfolio(self, portfolio: Portfolio) -> None:
         """Сохранить кошельки портфеля в portfolios.json (список)."""
         portfolios = self._load_portfolios()
+
+        wallets: dict[str, dict] = {}
+        for code, wallet in portfolio.wallets.items():
+            info = wallet.get_balance_info()
+            info["balance"] = round(info["balance"], 8)
+            wallets[code] = info
+
         new_entry = {
             "user_id": portfolio.user_id,
-            "wallets": {
-                code: wallet.get_balance_info()
-                for code, wallet in portfolio.wallets.items()
-            },
+            "wallets": wallets,
         }
 
         for index, entry in enumerate(portfolios):

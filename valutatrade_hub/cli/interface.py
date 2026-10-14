@@ -251,6 +251,15 @@ def _handle_command(service: ValutaTradeService, command_line: str) -> bool:
 
 def run() -> None:
     """Запустить интерактивный командный интерфейс."""
+    from valutatrade_hub.infra.settings import SettingsLoader
+    from valutatrade_hub.logging_config import setup_logging
+
+    settings = SettingsLoader()
+    setup_logging(
+        log_file=settings.get("log_file", "logs/actions.log"),
+        level=settings.get("log_level", "INFO"),
+    )
+
     service = ValutaTradeService()
     print("ValutaTrade Hub. Введите help для списка команд, exit для выхода.")
 

@@ -1,4 +1,3 @@
-
 """Классы валют и реестр поддерживаемых валют."""
 
 from abc import ABC, abstractmethod
