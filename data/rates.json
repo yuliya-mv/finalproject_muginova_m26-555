@@ -1,0 +1,7 @@
+{
+  "pairs": {
+    "BTC_USD": {"rate": 59337.21, "updated_at": "2026-10-15T13:00:00", "source": "manual"},
+    "EUR_USD": {"rate": 1.0786, "updated_at": "2026-10-15T13:00:00", "source": "manual"}
+  },
+  "last_refresh": "2026-10-15T13:00:00"
+}

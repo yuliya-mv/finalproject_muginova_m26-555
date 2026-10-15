@@ -4,7 +4,7 @@ import functools
 from datetime import datetime, timezone
 
 from valutatrade_hub.logging_config import get_logger, setup_logging
-
+from valutatrade_hub.core.models import User
 
 _logger = get_logger("valutatrade_hub.decorators")
 
@@ -17,11 +17,7 @@ def _format_timestamp() -> str:
 
 
 def log_action(action: str, verbose: bool = False):
-    """Создать декоратор для логирования операции.
-
-    :param action: имя операции (BUY, SELL, REGISTER, LOGIN).
-    :param verbose: добавлять ли контекст «было → стало».
-    """
+    """Создать декоратор для логирования операции."""
     def decorator(func):
         @functools.wraps(func)
         def wrapper(self, *args, **kwargs):
@@ -29,17 +25,21 @@ def log_action(action: str, verbose: bool = False):
 
             currency = ""
             amount = ""
+            username_arg = ""
 
-            if args:
+            if action in ("BUY", "SELL"):
                 if len(args) >= 1 and isinstance(args[0], str):
                     currency = args[0]
                 if len(args) >= 2 and isinstance(args[1], (int, float)):
                     amount = args[1]
+            elif action in ("REGISTER", "LOGIN"):
+                if len(args) >= 1 and isinstance(args[0], str):
+                    username_arg = args[0]
 
-            username = ""
+            username = username_arg
             user = getattr(self, "current_user", None)
             if user is not None:
-                username = getattr(user, "username", "")
+                username = getattr(user, "username", username)
 
             try:
                 result = func(self, *args, **kwargs)
@@ -47,6 +47,9 @@ def log_action(action: str, verbose: bool = False):
                 rate = result.get("rate") if isinstance(result, dict) else None
                 before = result.get("before") if isinstance(result, dict) else None
                 after = result.get("after") if isinstance(result, dict) else None
+
+                if isinstance(result, User):
+                    username = result.username
 
                 parts = [
                     _format_timestamp(),

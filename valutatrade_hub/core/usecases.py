@@ -13,6 +13,10 @@ from valutatrade_hub.core.utils import convert_currency, validate_currency_code
 from valutatrade_hub.decorators import log_action
 from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
+from valutatrade_hub.logging_config import get_logger
+
+
+_logger = get_logger("valutatrade_hub.usecases")
 
 
 class ValutaTradeService:
@@ -23,10 +27,6 @@ class ValutaTradeService:
         self.database = DatabaseManager()
         self.settings = SettingsLoader()
         self.current_user: User | None = None
-
-    # ------------------------------------------------------------------
-    # Регистрация и вход
-    # ------------------------------------------------------------------
 
     @log_action("REGISTER")
     def register(self, username: str, password: str) -> User:
@@ -78,10 +78,6 @@ class ValutaTradeService:
         self.current_user = user
         return user
 
-    # ------------------------------------------------------------------
-    # Портфель
-    # ------------------------------------------------------------------
-
     def get_portfolio(self) -> Portfolio:
         """Получить портфель текущего пользователя."""
         user = self._require_login()
@@ -107,9 +103,11 @@ class ValutaTradeService:
 
         portfolio = self.get_portfolio()
         rates = self._load_rates()
+        is_stale = self._is_cache_stale()
 
         rows: list[dict[str, Any]] = []
         total = 0.0
+        missing_rate = False
 
         for code, wallet in portfolio.wallets.items():
             try:
@@ -118,6 +116,7 @@ class ValutaTradeService:
                 )
             except (ValueError, CurrencyNotFoundError):
                 value = None
+                missing_rate = True
 
             if value is not None:
                 total += value
@@ -135,11 +134,9 @@ class ValutaTradeService:
             "base_currency": base_currency.upper(),
             "rows": rows,
             "total_value": total,
+            "is_stale": is_stale,
+            "missing_rate": missing_rate,
         }
-
-    # ------------------------------------------------------------------
-    # Покупка / продажа
-    # ------------------------------------------------------------------
 
     @log_action("BUY", verbose=True)
     def buy(self, currency_code: str, amount: float) -> dict[str, Any]:
@@ -211,16 +208,12 @@ class ValutaTradeService:
             "estimated_usd": estimated_usd,
         }
 
-    # ------------------------------------------------------------------
-    # Курсы
-    # ------------------------------------------------------------------
-
     def get_rate(
         self,
         from_currency: str,
         to_currency: str = "USD",
     ) -> dict[str, Any]:
-        """Получить прямой и обратный курсы валют."""
+        """Получить прямой и обратный курсы валют с учётом TTL кэша."""
         source = validate_currency_code(from_currency)
         target = validate_currency_code(to_currency)
 
@@ -236,6 +229,13 @@ class ValutaTradeService:
             )
 
         updated_at = self._find_updated_at(pairs, source, target)
+        is_stale = self._is_cache_stale()
+
+        if is_stale:
+            _logger.warning(
+                "TTL курсов истёк (порог=%s сек). Рекомендуется update-rates.",
+                self.settings.get("rates_ttl_seconds", 300),
+            )
 
         inverse_raw = 1 / raw_rate
 
@@ -247,11 +247,8 @@ class ValutaTradeService:
             if inverse_raw >= 1
             else round(inverse_raw, 8),
             "updated_at": updated_at,
+            "is_stale": is_stale,
         }
-
-    # ------------------------------------------------------------------
-    # Приватные помощники
-    # ------------------------------------------------------------------
 
     def _require_login(self) -> User:
         """Вернуть текущего пользователя или сообщить об отсутствии входа."""
@@ -320,6 +317,28 @@ class ValutaTradeService:
         """Загрузить курсы и вернуть словарь пар."""
         data = self.database.load("rates", {})
         return data.get("pairs", data)
+
+    def _is_cache_stale(self) -> bool:
+        """Проверить, устарел ли кэш курсов по TTL из SettingsLoader."""
+        data = self.database.load("rates", {})
+        last_refresh = data.get("last_refresh")
+
+        if not last_refresh:
+            return True
+
+        try:
+            refreshed_at = datetime.fromisoformat(last_refresh)
+        except ValueError:
+            return True
+
+        if refreshed_at.tzinfo is None:
+            refreshed_at = refreshed_at.replace(tzinfo=timezone.utc)
+
+        ttl = int(self.settings.get("rates_ttl_seconds", 300))
+        now = datetime.now(timezone.utc)
+        delta = (now - refreshed_at).total_seconds()
+
+        return delta > ttl
 
     def _get_rate_value(self, source: str, target: str) -> float | None:
         """Получить курс source→target без исключений."""

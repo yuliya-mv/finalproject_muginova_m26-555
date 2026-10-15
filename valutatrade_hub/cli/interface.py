@@ -8,6 +8,8 @@ from valutatrade_hub.core.exceptions import (
     InsufficientFundsError,
 )
 from valutatrade_hub.core.usecases import ValutaTradeService
+from valutatrade_hub.infra.settings import SettingsLoader
+from valutatrade_hub.logging_config import setup_logging
 
 
 def _print_help() -> None:
@@ -91,6 +93,11 @@ def _print_portfolio(service: ValutaTradeService, base_currency: str) -> None:
 
     print("---------------------------------")
     print(f"ИТОГО: {_format_money(result['total_value'])} {base}")
+
+    if result.get("missing_rate"):
+        print("Внимание: для некоторых валют нет курса.")
+    if result.get("is_stale"):
+        print("Курсы устарели. Выполните update-rates.")
 
 
 def _execute_command(
@@ -211,14 +218,30 @@ def _execute_command(
         to_currency = options.get("--to", "USD")
         result = service.get_rate(from_currency, to_currency)
 
+        rate_value = result["rate"]
+        inverse_value = result["inverse_rate"]
+
+        # Маленькие курсы показываем в обычном виде, а не в научной нотации.
+        if rate_value < 1:
+            rate_text = f"{rate_value:.8f}".rstrip("0").rstrip(".")
+        else:
+            rate_text = f"{rate_value:.2f}"
+
+        if inverse_value < 1:
+            inverse_text = f"{inverse_value:.8f}".rstrip("0").rstrip(".")
+        else:
+            inverse_text = f"{inverse_value:.2f}"
+
         print(
             f"Курс {result['from_currency']}→{result['to_currency']}: "
-            f"{result['rate']} (обновлено: {result['updated_at']})"
+            f"{rate_text} (обновлено: {result['updated_at']})"
         )
         print(
             f"Обратный курс {result['to_currency']}→"
-            f"{result['from_currency']}: {result['inverse_rate']}"
+            f"{result['from_currency']}: {inverse_text}"
         )
+        if result.get("is_stale"):
+            print("Курсы устарели. Выполните update-rates.")
 
     else:
         raise ValueError(
@@ -251,9 +274,6 @@ def _handle_command(service: ValutaTradeService, command_line: str) -> bool:
 
 def run() -> None:
     """Запустить интерактивный командный интерфейс."""
-    from valutatrade_hub.infra.settings import SettingsLoader
-    from valutatrade_hub.logging_config import setup_logging
-
     settings = SettingsLoader()
     setup_logging(
         log_file=settings.get("log_file", "logs/actions.log"),
