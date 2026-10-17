@@ -2,11 +2,13 @@
 
 import hashlib
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class User:
-    """Пользователь приложения."""
+    """Пользователь приложения"""
+
+    _PBKDF2_ITERATIONS = 100_000
 
     def __init__(
         self,
@@ -25,14 +27,19 @@ class User:
         self._username = username.strip()
         self._salt = secrets.token_hex(16)
         self._hashed_password = self._hash_password(password, self._salt)
-        self._registration_date = registration_date or datetime.now()
+        self._registration_date = registration_date or datetime.now(
+            timezone.utc
+        )
 
-    @staticmethod
-    def _hash_password(password: str, salt: str) -> str:
-        """Получить SHA-256 хеш пароля с солью."""
-        return hashlib.sha256(
-            f"{salt}{password}".encode("utf-8")
-        ).hexdigest()
+    @classmethod
+    def _hash_password(cls, password: str, salt: str) -> str:
+        """Получить pbkdf2_hmac SHA-256 хеш пароля с солью."""
+        return hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt.encode("utf-8"),
+            cls._PBKDF2_ITERATIONS,
+        ).hex()
 
     @property
     def user_id(self) -> int:
@@ -71,7 +78,9 @@ class User:
             raise ValueError("Пароль должен быть не короче 4 символов")
 
         self._salt = secrets.token_hex(16)
-        self._hashed_password = self._hash_password(new_password, self._salt)
+        self._hashed_password = self._hash_password(
+            new_password, self._salt
+        )
 
     def get_user_info(self) -> dict:
         """Вернуть данные пользователя без пароля и соли."""
@@ -190,7 +199,7 @@ class Portfolio:
 
     @property
     def user(self) -> User | None:
-        """Вернуть связанного пользователя."""
+        """Вернуть связанного пользователя (без возможности перезаписи)."""
         return self._user
 
     @property

@@ -2,10 +2,11 @@
 
 import shlex
 
+from prettytable import PrettyTable
+
 from valutatrade_hub.core.exceptions import (
     ApiRequestError,
-    CurrencyNotFoundError,
-    InsufficientFundsError,
+    ValutaTradeError,
 )
 from valutatrade_hub.core.usecases import ValutaTradeService
 from valutatrade_hub.infra.settings import SettingsLoader
@@ -64,7 +65,7 @@ def _format_money(value: float) -> str:
 
 
 def _print_portfolio(service: ValutaTradeService, base_currency: str) -> None:
-    """Вывести портфель пользователя в текстовом виде (как в ТЗ)."""
+    """Вывести портфель пользователя в виде таблицы PrettyTable."""
     result = service.show_portfolio(base_currency)
 
     username = result["username"]
@@ -73,32 +74,27 @@ def _print_portfolio(service: ValutaTradeService, base_currency: str) -> None:
     print(f"Портфель пользователя '{username}' (база: {base}):")
 
     if not result["rows"]:
-        print("- Портфель пуст.")
-        print("---------------------------------")
+        print("Портфель пуст.")
         print(f"ИТОГО: 0.00 {base}")
         return
 
+    table = PrettyTable()
+    table.field_names = ["Валюта", "Баланс", f"Стоимость ({base})"]
+
     for row in result["rows"]:
-        code = row["code"]
-        balance = row["balance"]
         value = row["value"]
+        value_text = (
+            _format_money(value) if value is not None else "нет курса"
+        )
+        table.add_row([row["code"], f"{row['balance']:.4f}", value_text])
 
-        if value is None:
-            print(f"- {code}: {balance:.4f}  →  нет курса")
-        else:
-            print(
-                f"- {code}: {balance:.4f}  →  "
-                f"{_format_money(value)} {base}"
-            )
-
-    print("---------------------------------")
+    print(table)
     print(f"ИТОГО: {_format_money(result['total_value'])} {base}")
 
     if result.get("missing_rate"):
         print("Внимание: для некоторых валют нет курса.")
     if result.get("is_stale"):
         print("Курсы устарели. Выполните update-rates.")
-
 
 def _execute_command(
     service: ValutaTradeService,
@@ -261,16 +257,9 @@ def _handle_command(service: ValutaTradeService, command_line: str) -> bool:
 
         return _execute_command(service, parts[0], parts[1:])
 
-    except (
-        ApiRequestError,
-        CurrencyNotFoundError,
-        InsufficientFundsError,
-        ValueError,
-        OSError,
-    ) as error:
+    except (ValutaTradeError, ValueError, OSError) as error:
         print(f"Ошибка: {error}")
         return True
-
 
 def run() -> None:
     """Запустить интерактивный командный интерфейс."""

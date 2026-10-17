@@ -4,8 +4,12 @@
         "wallets": {
             "BTC": {
                 "currency_code": "BTC",
-                "balance": 0.08
+                "balance": 0.13
             }
         }
+    },
+    {
+        "user_id": 1,
+        "wallets": {}
     }
 ]

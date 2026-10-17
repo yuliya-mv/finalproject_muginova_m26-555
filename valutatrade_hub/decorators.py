@@ -1,4 +1,4 @@
-"""Декоратор @log_action для трассировки доменных операций"""
+"""Декоратор @log_action (логирование доменных операций)"""
 
 import functools
 from datetime import datetime, timezone

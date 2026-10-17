@@ -113,3 +113,7 @@ def get_currency(code: str) -> Currency:
         return _CURRENCIES[normalized_code]
     except KeyError as error:
         raise CurrencyNotFoundError(normalized_code) from error
+
+def list_currencies() -> dict[str, Currency]:
+    """Вернуть копию реестра всех известных валют."""
+    return dict(_CURRENCIES)

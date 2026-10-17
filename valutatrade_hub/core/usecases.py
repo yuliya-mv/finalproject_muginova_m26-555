@@ -6,7 +6,9 @@ from typing import Any
 from valutatrade_hub.core.exceptions import (
     ApiRequestError,
     CurrencyNotFoundError,
-    InsufficientFundsError,
+    InvalidPasswordError,
+    UserNotFoundError,
+    ValidationError,
 )
 from valutatrade_hub.core.models import Portfolio, User, Wallet
 from valutatrade_hub.core.utils import convert_currency, validate_currency_code
@@ -59,7 +61,10 @@ class ValutaTradeService:
 
     @log_action("LOGIN")
     def login(self, username: str, password: str) -> User:
-        """Войти в приложение и установить текущего пользователя."""
+        """Войти в приложение и установить текущего пользователя.
+
+        Новый логин заменяет текущую сессию (см. README).
+        """
         users = self._load_users()
 
         found: dict | None = None
@@ -69,11 +74,11 @@ class ValutaTradeService:
                 break
 
         if found is None:
-            raise ValueError(f"Пользователь '{username}' не найден")
+            raise UserNotFoundError(username)
 
         user = User.from_dict(found)
         if not user.verify_password(password):
-            raise ValueError("Неверный пароль")
+            raise InvalidPasswordError()
 
         self.current_user = user
         return user
@@ -139,9 +144,18 @@ class ValutaTradeService:
         }
 
     @log_action("BUY", verbose=True)
-    def buy(self, currency_code: str, amount: float) -> dict[str, Any]:
-        """Купить валюту, увеличив её баланс в портфеле."""
-        user = self._require_login()
+    def buy(
+        self,
+        currency_code: str,
+        amount: float,
+        user_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Купить валюту, увеличив её баланс в портфеле.
+
+        Если user_id не передан — берётся из текущей сессии
+        (self.current_user).
+        """
+        user = self._resolve_user(user_id)
         code = validate_currency_code(currency_code)
         amount = self._validate_amount(amount)
 
@@ -172,9 +186,17 @@ class ValutaTradeService:
         }
 
     @log_action("SELL", verbose=True)
-    def sell(self, currency_code: str, amount: float) -> dict[str, Any]:
-        """Продать валюту при наличии кошелька и достаточного баланса."""
-        user = self._require_login()
+    def sell(
+        self,
+        currency_code: str,
+        amount: float,
+        user_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Продать валюту при наличии кошелька и достаточного баланса.
+
+        Если user_id не передан — берётся из текущей сессии.
+        """
+        user = self._resolve_user(user_id)
         code = validate_currency_code(currency_code)
         amount = self._validate_amount(amount)
 
@@ -182,7 +204,7 @@ class ValutaTradeService:
         wallet = portfolio.get_wallet(code)
 
         if wallet is None:
-            raise ValueError(
+            raise ValidationError(
                 f"У вас нет кошелька '{code}'. "
                 "Добавьте валюту: она создаётся автоматически "
                 "при первой покупке."
@@ -253,8 +275,20 @@ class ValutaTradeService:
     def _require_login(self) -> User:
         """Вернуть текущего пользователя или сообщить об отсутствии входа."""
         if self.current_user is None:
-            raise ValueError("Сначала выполните login")
+            raise ValidationError("Сначала выполните login")
         return self.current_user
+
+    def _resolve_user(self, user_id: int | None = None) -> User:
+        """Вернуть пользователя по user_id или из текущей сессии."""
+        if user_id is None:
+            return self._require_login()
+
+        users = self._load_users()
+        for user_data in users:
+            if int(user_data.get("user_id", -1)) == user_id:
+                return User.from_dict(user_data)
+
+        raise UserNotFoundError(str(user_id))
 
     @staticmethod
     def _validate_amount(amount: float) -> float:
@@ -264,7 +298,7 @@ class ValutaTradeService:
             or not isinstance(amount, (int, float))
             or amount <= 0
         ):
-            raise ValueError("'amount' должен быть положительным числом")
+            raise ValidationError("'amount' должен быть положительным числом")
         return float(amount)
 
     def _load_users(self) -> list:
