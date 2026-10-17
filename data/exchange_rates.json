@@ -20,5 +20,38 @@
     "meta": {
       "raw_id": "ethereum"
     }
+  },
+  {
+    "id": "BTC_USD_2026-10-17T13:42:20+00:00",
+    "from_currency": "BTC",
+    "to_currency": "USD",
+    "rate": 81390.0,
+    "timestamp": "2026-10-17T13:42:20+00:00",
+    "source": "CoinGecko",
+    "meta": {
+      "raw_id": "bitcoin"
+    }
+  },
+  {
+    "id": "ETH_USD_2026-10-17T13:42:20+00:00",
+    "from_currency": "ETH",
+    "to_currency": "USD",
+    "rate": 2421.06,
+    "timestamp": "2026-10-17T13:42:20+00:00",
+    "source": "CoinGecko",
+    "meta": {
+      "raw_id": "ethereum"
+    }
+  },
+  {
+    "id": "SOL_USD_2026-10-17T13:42:20+00:00",
+    "from_currency": "SOL",
+    "to_currency": "USD",
+    "rate": 103.82,
+    "timestamp": "2026-10-17T13:42:20+00:00",
+    "source": "CoinGecko",
+    "meta": {
+      "raw_id": "solana"
+    }
   }
 ]
