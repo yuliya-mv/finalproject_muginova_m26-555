@@ -10,7 +10,6 @@ from typing import Any
 from valutatrade_hub.logging_config import get_logger
 from valutatrade_hub.parser_service.config import ParserConfig
 
-
 _logger = get_logger("valutatrade_hub.parser")
 
 

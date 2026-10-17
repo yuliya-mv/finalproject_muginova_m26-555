@@ -8,7 +8,6 @@ from valutatrade_hub.core.exceptions import ApiRequestError
 from valutatrade_hub.logging_config import get_logger
 from valutatrade_hub.parser_service.config import ParserConfig
 
-
 _logger = get_logger("valutatrade_hub.parser")
 
 
@@ -22,8 +21,7 @@ class BaseApiClient(ABC):
 
     @abstractmethod
     def fetch_rates(self) -> dict[str, float]:
-        """Получить курсы валют в стандартизированном формате: {"BTC_USD": 59337.21, ...}.
-        """
+        """Получить курсы в стандартизированном формате: {"BTC_USD": 59.21, ...}."""
 
 
 class CoinGeckoClient(BaseApiClient):

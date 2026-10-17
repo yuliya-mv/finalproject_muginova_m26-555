@@ -4,13 +4,19 @@ import shlex
 
 from prettytable import PrettyTable
 
+from valutatrade_hub.core.currencies import get_currency
 from valutatrade_hub.core.exceptions import (
-    ApiRequestError,
     ValutaTradeError,
 )
 from valutatrade_hub.core.usecases import ValutaTradeService
 from valutatrade_hub.infra.settings import SettingsLoader
-from valutatrade_hub.logging_config import setup_logging
+from valutatrade_hub.logging_config import (
+    attach_console_handler,
+    detach_console_handler,
+    setup_logging,
+)
+from valutatrade_hub.parser_service.config import ParserConfig
+from valutatrade_hub.parser_service.scheduler import build_updater
 
 
 def _print_help() -> None:
@@ -22,7 +28,9 @@ def _print_help() -> None:
         "  show-portfolio [--base ВАЛЮТА]\n"
         "  buy --currency ВАЛЮТА --amount СУММА\n"
         "  sell --currency ВАЛЮТА --amount СУММА\n"
-        "  get-rate --from ВАЛЮТА --to ВАЛЮТА\n"
+        "  get-rate --from ВАЛЮТА [--to ВАЛЮТА]\n"
+        "  update-rates [--source ИСТОЧНИК]\n"
+        "  show-rates [--currency ВАЛЮТА] [--top N] [--base ВАЛЮТА]\n"
         "  help\n"
         "  exit"
     )
@@ -96,6 +104,7 @@ def _print_portfolio(service: ValutaTradeService, base_currency: str) -> None:
     if result.get("is_stale"):
         print("Курсы устарели. Выполните update-rates.")
 
+
 def _execute_command(
     service: ValutaTradeService,
     command: str,
@@ -117,6 +126,25 @@ def _execute_command(
 
         base = options.get("--base", "USD")
         _print_portfolio(service, base)
+        return True
+
+    if command == "update-rates":
+        options = _parse_options(arguments)
+        unknown = set(options) - {"--source"}
+        if unknown:
+            raise ValueError(f"Неизвестный параметр: {sorted(unknown)[0]}")
+
+        source_filter = options.get("--source")
+        _run_update_rates(source_filter)
+        return True
+
+    if command == "show-rates":
+        options = _parse_options(arguments)
+        unknown = set(options) - {"--currency", "--top", "--base"}
+        if unknown:
+            raise ValueError(f"Неизвестный параметр: {sorted(unknown)[0]}")
+
+        _print_rates(options)
         return True
 
     options = _parse_options(arguments)
@@ -144,7 +172,9 @@ def _execute_command(
         try:
             amount = float(amount_text)
         except ValueError as error:
-            raise ValueError("'amount' должен быть положительным числом") from error
+            raise ValueError(
+                "'amount' должен быть положительным числом"
+            ) from error
 
         result = service.buy(currency, amount)
         rate = result["rate"]
@@ -180,7 +210,9 @@ def _execute_command(
         try:
             amount = float(amount_text)
         except ValueError as error:
-            raise ValueError("'amount' должен быть положительным числом") from error
+            raise ValueError(
+                "'amount' должен быть положительным числом"
+            ) from error
 
         result = service.sell(currency, amount)
         rate = result["rate"]
@@ -217,7 +249,6 @@ def _execute_command(
         rate_value = result["rate"]
         inverse_value = result["inverse_rate"]
 
-        # Маленькие курсы показываем в обычном виде, а не в научной нотации.
         if rate_value < 1:
             rate_text = f"{rate_value:.8f}".rstrip("0").rstrip(".")
         else:
@@ -236,6 +267,7 @@ def _execute_command(
             f"Обратный курс {result['to_currency']}→"
             f"{result['from_currency']}: {inverse_text}"
         )
+
         if result.get("is_stale"):
             print("Курсы устарели. Выполните update-rates.")
 
@@ -245,6 +277,132 @@ def _execute_command(
         )
 
     return True
+
+
+def _run_update_rates(source_filter: str | None) -> None:
+    """Запустить Parser Service через команду update-rates."""
+    config = ParserConfig()
+    updater = build_updater(config)
+
+    if source_filter:
+        source_filter_lower = source_filter.lower()
+        filtered = [
+            (name, client)
+            for name, client in updater.clients
+            if source_filter_lower in name.lower()
+        ]
+        if not filtered:
+            raise ValueError(
+                f"Неизвестный источник: {source_filter}. "
+                "Доступны: CoinGecko, ExchangeRate-API."
+            )
+        updater.clients = filtered
+
+    console_handler = attach_console_handler()
+    try:
+        result = updater.run_update()
+    finally:
+        detach_console_handler(console_handler)
+
+    count = result["count_updated"]
+    last_refresh = result["last_refresh"]
+    errors = result["errors"]
+
+    if errors:
+        print(
+            "Update completed with errors. "
+            f"Updated: {count}. "
+            "Check logs/parser.log for details."
+        )
+    else:
+        print(
+            "Update successful. "
+            f"Total rates updated: {count}. "
+            f"Last refresh: {last_refresh}"
+        )
+
+
+def _print_rates(options: dict[str, str]) -> None:
+    """Показать курсы из локального кэша (rates.json)."""
+    from valutatrade_hub.parser_service.storage import Storage
+
+    config = ParserConfig()
+    storage = Storage(config)
+    snapshot = storage.load_rates()
+
+    pairs: dict[str, dict] = snapshot.get("pairs", {}) or {}
+    last_refresh = snapshot.get("last_refresh", "unknown")
+
+    if not pairs:
+        print(
+            "Локальный кеш курсов пуст. "
+            "Выполните 'update-rates', чтобы загрузить данные."
+        )
+        return
+
+    currency_filter = options.get("--currency")
+    top = options.get("--top")
+    base_filter = options.get("--base", "USD").upper()
+
+    if currency_filter:
+        currency_code = currency_filter.upper()
+        get_currency(currency_code)
+        key = f"{currency_code}_{base_filter}"
+        entry = pairs.get(key)
+        if entry is None:
+            print(
+                f"Курс для '{currency_code}' не найден в кеше."
+            )
+            return
+        pairs = {key: entry}
+
+    if top:
+        try:
+            top_n = int(top)
+        except ValueError as error:
+            raise ValueError("--top должен быть целым числом") from error
+
+        crypto_codes = set(config.CRYPTO_CURRENCIES)
+        candidates = []
+        for pair, entry in pairs.items():
+            from_code = pair.split("_")[0]
+            if from_code not in crypto_codes:
+                continue
+            if not pair.endswith(f"_{base_filter}"):
+                continue
+            rate = entry.get("rate") if isinstance(entry, dict) else None
+            if isinstance(rate, (int, float)):
+                candidates.append((pair, float(rate), entry))
+
+        candidates.sort(key=lambda item: item[1], reverse=True)
+        pairs = {pair: entry for pair, _, entry in candidates[:top_n]}
+
+    table = PrettyTable()
+    table.field_names = ["Пара", "Курс", "Обновлено", "Источник"]
+
+    for pair in sorted(pairs):
+        entry = pairs[pair]
+        if isinstance(entry, dict):
+            rate = entry.get("rate", "—")
+            updated_at = entry.get("updated_at", "—")
+            source = entry.get("source", "—")
+        else:
+            rate = entry
+            updated_at = "—"
+            source = "—"
+
+        if isinstance(rate, float):
+            if rate < 1:
+                rate_text = f"{rate:.8f}".rstrip("0").rstrip(".")
+            else:
+                rate_text = f"{rate:.4f}"
+        else:
+            rate_text = str(rate)
+
+        table.add_row([pair, rate_text, updated_at, source])
+
+    print(f"Rates from cache (updated at {last_refresh}):")
+    print(table)
 
 
 def _handle_command(service: ValutaTradeService, command_line: str) -> bool:
@@ -261,6 +419,7 @@ def _handle_command(service: ValutaTradeService, command_line: str) -> bool:
         print(f"Ошибка: {error}")
         return True
 
+
 def run() -> None:
     """Запустить интерактивный командный интерфейс."""
     settings = SettingsLoader()
@@ -270,7 +429,10 @@ def run() -> None:
     )
 
     service = ValutaTradeService()
-    print("ValutaTrade Hub. Введите help для списка команд, exit для выхода.")
+    print(
+        "ValutaTrade Hub. Введите help для списка команд, "
+        "exit для выхода."
+    )
 
     while True:
         try:

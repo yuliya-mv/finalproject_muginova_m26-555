@@ -11,7 +11,6 @@ from valutatrade_hub.parser_service.config import ParserConfig
 from valutatrade_hub.parser_service.storage import Storage
 from valutatrade_hub.parser_service.updater import RatesUpdater
 
-
 _logger = get_logger("valutatrade_hub.parser")
 
 

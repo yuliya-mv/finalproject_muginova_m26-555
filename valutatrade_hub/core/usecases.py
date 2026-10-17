@@ -17,7 +17,6 @@ from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
 from valutatrade_hub.logging_config import get_logger
 
-
 _logger = get_logger("valutatrade_hub.usecases")
 
 

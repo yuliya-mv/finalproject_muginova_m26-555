@@ -4,7 +4,6 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-
 _MAIN_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 _PARSER_FORMAT = (
     "%(asctime)s %(levelname)s [%(name)s] "

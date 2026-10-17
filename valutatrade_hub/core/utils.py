@@ -2,7 +2,6 @@
 
 from valutatrade_hub.core.currencies import get_currency
 
-
 EXCHANGE_RATES: dict[str, float] = {
     "USD_USD": 1.0,
     "EUR_USD": 1.08,

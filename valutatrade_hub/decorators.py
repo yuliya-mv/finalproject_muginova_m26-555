@@ -3,8 +3,8 @@
 import functools
 from datetime import datetime, timezone
 
-from valutatrade_hub.logging_config import get_logger, setup_logging
 from valutatrade_hub.core.models import User
+from valutatrade_hub.logging_config import get_logger, setup_logging
 
 _logger = get_logger("valutatrade_hub.decorators")
 
