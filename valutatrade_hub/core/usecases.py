@@ -16,9 +16,6 @@ from valutatrade_hub.core.utils import convert_currency, validate_currency_code
 from valutatrade_hub.decorators import log_action
 from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
-from valutatrade_hub.logging_config import get_logger
-
-_logger = get_logger("valutatrade_hub.usecases")
 
 
 class ValutaTradeService:
@@ -62,10 +59,7 @@ class ValutaTradeService:
 
     @log_action("LOGIN")
     def login(self, username: str, password: str) -> User:
-        """Войти в приложение и установить текущего пользователя.
-
-        Новый логин заменяет текущую сессию (см. README).
-        """
+        """Войти в приложение и установить текущего пользователя."""
         users = self._load_users()
 
         found: dict | None = None
@@ -104,7 +98,7 @@ class ValutaTradeService:
         return Portfolio(user.user_id, wallets, user)
 
     def show_portfolio(self, base_currency: str = "USD") -> dict[str, Any]:
-        """Вернуть подготовленные строки и итог портфеля."""
+        """Вернуть данные портфеля."""
         validate_currency_code(base_currency)
 
         portfolio = self.get_portfolio()
@@ -151,7 +145,7 @@ class ValutaTradeService:
         amount: float,
         user_id: int | None = None,
     ) -> dict[str, Any]:
-        """Увеличить баланс валюты у вошедшего в систему пользователя."""
+        """Купить валюту залогиненным пользователем."""
         user = self._require_login()
         if user_id is not None and user_id != user.user_id:
             raise ValidationError(
@@ -196,11 +190,11 @@ class ValutaTradeService:
         amount: float,
         user_id: int | None = None,
     ) -> dict[str, Any]:
-        """Уменьшить баланс валюты у вошедшего в систему пользователя."""
+        """Продать валюту залогиненного пользователя."""
         user = self._require_login()
         if user_id is not None and user_id != user.user_id:
             raise ValidationError(
-                "Нельзя выполнять операцию для другого пользователя"
+                "Нельзя выполнить операцию для другого пользователя"
             )
 
         code = validate_currency_code(currency_code)
@@ -210,8 +204,7 @@ class ValutaTradeService:
 
         if wallet is None:
             raise ValidationError(
-                f"У вас нет кошелька '{code}'. "
-                "Сначала купите эту валюту."
+                f"У вас нет кошелька '{code}'. Сначала купите эту валюту."
             )
 
         if wallet.balance < amount:
@@ -248,30 +241,26 @@ class ValutaTradeService:
         source = validate_currency_code(from_currency)
         target = validate_currency_code(to_currency)
 
-        # Если кэш устарел — пробуем обновить его через Parser Service.
         if self._is_cache_stale():
             self._try_refresh_rates()
 
         rates_data = self.database.load("rates", {})
+        if not isinstance(rates_data, dict):
+            rates_data = {}
         pairs = rates_data.get("pairs", rates_data)
+        if not isinstance(pairs, dict):
+            pairs = {}
 
         raw_rate = self._find_rate(pairs, source, target)
 
         if raw_rate is None:
             raise ApiRequestError(
                 f"Курс {source}→{target} недоступен. "
-                "Повторите попытку позже или выполните update-rates."
+                "Повторите позже или выполните update-rates."
             )
 
         updated_at = self._find_updated_at(pairs, source, target)
         is_stale = self._is_cache_stale() or self._is_pair_stale(updated_at)
-
-        if is_stale:
-            _logger.warning(
-                "TTL курсов истёк (порог=%s сек). "
-                "Не удалось обновить кэш автоматически.",
-                self.settings.get("rates_ttl_seconds", 300),
-            )
 
         inverse_raw = 1 / raw_rate
 
@@ -287,7 +276,7 @@ class ValutaTradeService:
         }
 
     def _require_login(self) -> User:
-        """Вернуть текущего пользователя или сообщить об отсутствии входа."""
+        """Сообщить об отсутствии входа."""
         if self.current_user is None:
             raise ValidationError("Сначала выполните login")
         return self.current_user
@@ -306,7 +295,7 @@ class ValutaTradeService:
 
     @staticmethod
     def _validate_amount(amount: float) -> float:
-        """Проверить, что сумма — конечное положительное число."""
+        """Проверка, что сумма положительная."""
         error_message = "'amount' должен быть положительным числом"
         if isinstance(amount, bool) or not isinstance(amount, (int, float)):
             raise ValidationError(error_message)
@@ -349,7 +338,7 @@ class ValutaTradeService:
         return None
 
     def _save_portfolio(self, portfolio: Portfolio) -> None:
-        """Сохранить кошельки портфеля в portfolios.json (список)."""
+        """Сохранить кошельки портфеля в portfolios.json"""
         portfolios = self._load_portfolios()
 
         wallets: dict[str, dict] = {}
@@ -373,13 +362,19 @@ class ValutaTradeService:
         self.database.save("portfolios", portfolios)
 
     def _load_rates(self) -> dict:
-        """Загрузить курсы и вернуть словарь пар."""
+        """Загрузить курсы."""
         data = self.database.load("rates", {})
-        return data.get("pairs", data)
+        if not isinstance(data, dict):
+            return {}
+        pairs = data.get("pairs", data)
+        return pairs if isinstance(pairs, dict) else {}
 
     def _is_cache_stale(self) -> bool:
-        """Проверить, устарел ли кэш курсов по TTL из SettingsLoader."""
+        """Проверить, устарел ли кэш курсов из SettingsLoader."""
         data = self.database.load("rates", {})
+        if not isinstance(data, dict):
+            return True
+
         last_refresh = data.get("last_refresh")
 
         if not last_refresh:
@@ -399,26 +394,38 @@ class ValutaTradeService:
 
         return delta > ttl
 
-    def _try_refresh_rates(self) -> None:
-        """Попробовать обновить кэш курсов через Parser Service.
+    def _is_pair_stale(self, updated_at: str) -> bool:
+        """Проверить, устарел ли конкретный курс по TTL."""
+        if not updated_at:
+            return True
 
-        Ошибки не пробрасываются: если Parser недоступен, приложение
-        продолжит работать со старым кэшем (is_stale=True).
-        """
+        try:
+            refreshed_at = datetime.fromisoformat(updated_at)
+        except ValueError:
+            return True
+
+        if refreshed_at.tzinfo is None:
+            refreshed_at = refreshed_at.replace(tzinfo=timezone.utc)
+
+        ttl = int(self.settings.get("rates_ttl_seconds", 300))
+        now = datetime.now(timezone.utc)
+        delta = (now - refreshed_at).total_seconds()
+
+        return delta > ttl
+
+    def _try_refresh_rates(self) -> None:
+        """Попробовать обновить кэш курсов через Parser Service."""
         try:
             from valutatrade_hub.parser_service.config import ParserConfig
             from valutatrade_hub.parser_service.scheduler import build_updater
 
             updater = build_updater(ParserConfig())
             updater.run_update()
-        except Exception as error:  # noqa: BLE001
-            _logger.warning(
-                "Не удалось обновить курсы через Parser Service: %s",
-                error,
-            )
+        except Exception:
+            pass
 
     def _get_rate_value(self, source: str, target: str) -> float | None:
-        """Получить курс source→target без исключений."""
+        """Получить курс."""
         try:
             rates = self._load_rates()
             return self._find_rate(rates, source, target)
@@ -431,7 +438,6 @@ class ValutaTradeService:
         source: str,
         target: str,
     ) -> float | None:
-        """Найти курс прямой или обратной пары через USD."""
         if source == target:
             return 1.0
 
@@ -468,7 +474,7 @@ class ValutaTradeService:
 
     @staticmethod
     def _find_updated_at(rates: dict, source: str, target: str) -> str:
-        """Найти метку updated_at для пары, если есть."""
+        """Найти updated_at для пары, если есть."""
         for pair in (f"{source}_{target}", f"{target}_{source}"):
             entry = rates.get(pair)
             if isinstance(entry, dict) and "updated_at" in entry:
