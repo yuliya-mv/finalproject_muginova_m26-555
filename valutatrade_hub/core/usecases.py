@@ -6,6 +6,7 @@ from typing import Any
 from valutatrade_hub.core.exceptions import (
     ApiRequestError,
     CurrencyNotFoundError,
+    InsufficientFundsError,
     InvalidPasswordError,
     UserNotFoundError,
     ValidationError,
@@ -53,8 +54,9 @@ class ValutaTradeService:
         self.database.save("users", users)
 
         portfolios = self._load_portfolios()
-        portfolios.append({"user_id": user_id, "wallets": {}})
-        self.database.save("portfolios", portfolios)
+        if not self._find_portfolio(portfolios, user_id):
+            portfolios.append({"user_id": user_id, "wallets": {}})
+            self.database.save("portfolios", portfolios)
 
         return user
 
@@ -149,29 +151,32 @@ class ValutaTradeService:
         amount: float,
         user_id: int | None = None,
     ) -> dict[str, Any]:
-        """Купить валюту, увеличив её баланс в портфеле.
+        """Увеличить баланс валюты у вошедшего в систему пользователя."""
+        user = self._require_login()
+        if user_id is not None and user_id != user.user_id:
+            raise ValidationError(
+                "Нельзя выполнять операцию для другого пользователя"
+            )
 
-        Если user_id не передан — берётся из текущей сессии
-        (self.current_user).
-        """
-        user = self._resolve_user(user_id)
         code = validate_currency_code(currency_code)
         amount = self._validate_amount(amount)
 
+        rate = self._get_rate_value(code, "USD")
+        if rate is None:
+            raise ApiRequestError(
+                f"Не удалось получить курс для {code}→USD"
+            )
+
         portfolio = self.get_portfolio()
         wallet = portfolio.get_wallet(code)
+        before = round(wallet.balance, 8) if wallet is not None else 0.0
 
-        before = wallet.balance if wallet is not None else 0.0
         if wallet is None:
             wallet = portfolio.add_currency(code)
 
         wallet.deposit(amount)
-        after = wallet.balance
-
+        after = round(wallet.balance, 8)
         self._save_portfolio(portfolio)
-
-        rate = self._get_rate_value(code, "USD")
-        estimated_usd = amount * rate if rate is not None else None
 
         return {
             "action": "buy",
@@ -181,7 +186,7 @@ class ValutaTradeService:
             "before": before,
             "after": after,
             "rate": rate,
-            "estimated_usd": estimated_usd,
+            "estimated_usd": amount * rate,
         }
 
     @log_action("SELL", verbose=True)
@@ -191,32 +196,37 @@ class ValutaTradeService:
         amount: float,
         user_id: int | None = None,
     ) -> dict[str, Any]:
-        """Продать валюту при наличии кошелька и достаточного баланса.
+        """Уменьшить баланс валюты у вошедшего в систему пользователя."""
+        user = self._require_login()
+        if user_id is not None and user_id != user.user_id:
+            raise ValidationError(
+                "Нельзя выполнять операцию для другого пользователя"
+            )
 
-        Если user_id не передан — берётся из текущей сессии.
-        """
-        user = self._resolve_user(user_id)
         code = validate_currency_code(currency_code)
         amount = self._validate_amount(amount)
-
         portfolio = self.get_portfolio()
         wallet = portfolio.get_wallet(code)
 
         if wallet is None:
             raise ValidationError(
                 f"У вас нет кошелька '{code}'. "
-                "Добавьте валюту: она создаётся автоматически "
-                "при первой покупке."
+                "Сначала купите эту валюту."
             )
 
-        before = wallet.balance
-        wallet.withdraw(amount)
-        after = wallet.balance
-
-        self._save_portfolio(portfolio)
+        if wallet.balance < amount:
+            raise InsufficientFundsError(wallet.balance, amount, code)
 
         rate = self._get_rate_value(code, "USD")
-        estimated_usd = amount * rate if rate is not None else None
+        if rate is None:
+            raise ApiRequestError(
+                f"Не удалось получить курс для {code}→USD"
+            )
+
+        before = round(wallet.balance, 8)
+        wallet.withdraw(amount)
+        after = round(wallet.balance, 8)
+        self._save_portfolio(portfolio)
 
         return {
             "action": "sell",
@@ -226,7 +236,7 @@ class ValutaTradeService:
             "before": before,
             "after": after,
             "rate": rate,
-            "estimated_usd": estimated_usd,
+            "estimated_usd": amount * rate,
         }
 
     def get_rate(
@@ -237,6 +247,10 @@ class ValutaTradeService:
         """Получить прямой и обратный курсы валют с учётом TTL кэша."""
         source = validate_currency_code(from_currency)
         target = validate_currency_code(to_currency)
+
+        # Если кэш устарел — пробуем обновить его через Parser Service.
+        if self._is_cache_stale():
+            self._try_refresh_rates()
 
         rates_data = self.database.load("rates", {})
         pairs = rates_data.get("pairs", rates_data)
@@ -250,11 +264,12 @@ class ValutaTradeService:
             )
 
         updated_at = self._find_updated_at(pairs, source, target)
-        is_stale = self._is_cache_stale()
+        is_stale = self._is_cache_stale() or self._is_pair_stale(updated_at)
 
         if is_stale:
             _logger.warning(
-                "TTL курсов истёк (порог=%s сек). Рекомендуется update-rates.",
+                "TTL курсов истёк (порог=%s сек). "
+                "Не удалось обновить кэш автоматически.",
                 self.settings.get("rates_ttl_seconds", 300),
             )
 
@@ -291,14 +306,25 @@ class ValutaTradeService:
 
     @staticmethod
     def _validate_amount(amount: float) -> float:
-        """Проверить, что сумма является положительным числом."""
+        """Проверить, что сумма — конечное положительное число."""
+        error_message = "'amount' должен быть положительным числом"
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)):
+            raise ValidationError(error_message)
+
+        try:
+            numeric_amount = float(amount)
+        except (OverflowError, ValueError):
+            raise ValidationError(error_message) from None
+
         if (
-            isinstance(amount, bool)
-            or not isinstance(amount, (int, float))
-            or amount <= 0
+            numeric_amount <= 0
+            or numeric_amount != numeric_amount
+            or numeric_amount == float("inf")
+            or numeric_amount == float("-inf")
         ):
-            raise ValidationError("'amount' должен быть положительным числом")
-        return float(amount)
+            raise ValidationError(error_message)
+
+        return numeric_amount
 
     def _load_users(self) -> list:
         """Загрузить список пользователей."""
@@ -372,6 +398,24 @@ class ValutaTradeService:
         delta = (now - refreshed_at).total_seconds()
 
         return delta > ttl
+
+    def _try_refresh_rates(self) -> None:
+        """Попробовать обновить кэш курсов через Parser Service.
+
+        Ошибки не пробрасываются: если Parser недоступен, приложение
+        продолжит работать со старым кэшем (is_stale=True).
+        """
+        try:
+            from valutatrade_hub.parser_service.config import ParserConfig
+            from valutatrade_hub.parser_service.scheduler import build_updater
+
+            updater = build_updater(ParserConfig())
+            updater.run_update()
+        except Exception as error:  # noqa: BLE001
+            _logger.warning(
+                "Не удалось обновить курсы через Parser Service: %s",
+                error,
+            )
 
     def _get_rate_value(self, source: str, target: str) -> float | None:
         """Получить курс source→target без исключений."""

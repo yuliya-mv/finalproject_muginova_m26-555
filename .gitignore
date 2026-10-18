@@ -21,6 +21,7 @@ logs/
 !.env.example
 
 # Временные файлы
+data/*.json
 *.tmp
 
 # Кэш инструментов

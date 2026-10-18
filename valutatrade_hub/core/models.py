@@ -59,6 +59,16 @@ class User:
         self._username = value.strip()
 
     @property
+    def password(self) -> str:
+        """Пароль недоступен для чтения (защита от утечки)."""
+        raise AttributeError("Пароль недоступен для чтения")
+
+    @password.setter
+    def password(self, new_password: str) -> None:
+        """Изменить пароль с проверкой длины."""
+        self.change_password(new_password)
+
+    @property
     def registration_date(self) -> datetime:
         """Вернуть дату регистрации."""
         return self._registration_date

@@ -1,5 +1,6 @@
 """Настройки приложения ValutaTrade Hub."""
 
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,8 @@ class SettingsLoader:
         "log_level": "INFO",
     }
 
+    _PYPROJECT_PATH = Path(__file__).resolve().parents[2] / "pyproject.toml"
+
     def __new__(cls) -> "SettingsLoader":
         """Создать только один экземпляр класса.
 
@@ -26,8 +29,25 @@ class SettingsLoader:
         """
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._settings = dict(cls._DEFAULTS)
+            cls._instance._settings = cls._instance._load_settings()
         return cls._instance
+
+    @classmethod
+    def _load_settings(cls) -> dict[str, Any]:
+        """Загрузить настройки из pyproject.toml поверх значений по умолчанию."""
+        settings = dict(cls._DEFAULTS)
+
+        try:
+            with cls._PYPROJECT_PATH.open("rb") as file:
+                pyproject = tomllib.load(file)
+        except (OSError, tomllib.TOMLDecodeError):
+            return settings
+
+        section = pyproject.get("tool", {}).get("valutatrade", {})
+        if isinstance(section, dict):
+            settings.update(section)
+
+        return settings
 
     def get(self, key: str, default: Any = None) -> Any:
         """Получить настройку по имени."""
@@ -42,5 +62,5 @@ class SettingsLoader:
         return Path(self.get("data_dir", "data")) / filename
 
     def reload(self) -> None:
-        """Сбросить настройки к значениям по умолчанию."""
-        self._settings = dict(self._DEFAULTS)
+        """Перезагрузить настройки из pyproject.toml."""
+        self._settings = self._load_settings()
