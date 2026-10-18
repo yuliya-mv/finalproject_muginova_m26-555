@@ -4,8 +4,11 @@ import shlex
 
 from prettytable import PrettyTable
 
-from valutatrade_hub.core.currencies import get_currency
+from valutatrade_hub.core.currencies import get_currency, list_currencies
 from valutatrade_hub.core.exceptions import (
+    ApiRequestError,
+    CurrencyNotFoundError,
+    InsufficientFundsError,
     ValutaTradeError,
 )
 from valutatrade_hub.core.usecases import ValutaTradeService
@@ -414,6 +417,22 @@ def _handle_command(service: ValutaTradeService, command_line: str) -> bool:
             return True
 
         return _execute_command(service, parts[0], parts[1:])
+
+    except CurrencyNotFoundError as error:
+        print(str(error))
+        codes = ", ".join(sorted(list_currencies().keys()))
+        print(f"Поддерживаемые коды: {codes}")
+        print("Справка: help get-rate")
+        return True
+
+    except ApiRequestError as error:
+        print(str(error))
+        print("Повторите попытку позже или проверьте подключение к сети.")
+        return True
+
+    except InsufficientFundsError as error:
+        print(str(error))
+        return True
 
     except (ValutaTradeError, ValueError, OSError) as error:
         print(f"Ошибка: {error}")
