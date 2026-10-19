@@ -16,25 +16,25 @@ https://asciinema.org/a/sk4AjVkDClkJPJah
 finalproject_<фамилия>_<группа>/
 │  
 ├── data/
-│    ├── users.json          
-│    ├── portfolios.json       
-│    ├── rates.json               # локальный кэш для Core Service
-│    └── exchange_rates.json      # хранилище Parser Service (исторические данные).json            
+│    ├── users.json              # список пользователей         
+│    ├── portfolios.json         # портфели и кошельки       
+│    ├── rates.json              # локальный кэш для Core Service
+│    └── exchange_rates.json     # хранилище Parser Service (исторические данные).json            
 ├── valutatrade_hub/
 │    ├── __init__.py
-│    ├── logging_config.py         
-│    ├── decorators.py            
+│    ├── logging_config.py     # Настройка логов (формат, уровень, ротация)         
+│    ├── decorators.py         # @log_action (логирование операций)            
 │    ├── core/
 │    │    ├── __init__.py
-│    │    ├── currencies.py         
-│    │    ├── exceptions.py         
-│    │    ├── models.py           
-│    │    ├── usecases.py          
-│    │    └── utils.py             
+│    │    ├── currencies.py    # базовый класс Currency и наследники Fiat/Crypto     
+│    │    ├── exceptions.py    # пользовательские исключения     
+│    │    ├── models.py        # реализация классов    
+│    │    ├── usecases.py      # бизнес-логика     
+│    │    └── utils.py         # вспомогательные функции    
 │    ├── infra/
 │    │    ├─ __init__.py
-│    │    ├── settings.py           
-│    │    └── database.py          
+│    │    ├── settings.py      # Singleton SettingsLoader (конфигурация)      
+│    │    └── database.py      # Singleton DatabaseManager (над JSON-хранилищем)    
 │    ├── parser_service/
 │    │    ├── __init__.py
 │    │    ├── config.py             # конфигурация API и параметров обновления
@@ -44,7 +44,7 @@ finalproject_<фамилия>_<группа>/
 │    │    └── scheduler.py          # планировщик периодического обновления
 │    └── cli/
 │         ├─ __init__.py
-│         └─ interface.py     
+│         └─ interface.py           # команды
 │
 ├── main.py
 ├── uv.lock
@@ -61,7 +61,7 @@ finalproject_<фамилия>_<группа>/
 | Инструмент | Установка | Запуск |
 |---|---|---|
 | **UV** | `uv sync` | `uv run project` |
-| **ExchangeRate-API** | `https://www.exchangerate-api.com/` | `EXCHANGERATE_API_KEY=<Ключ_платформы>` |
+| **ExchangeRate-API** | `https://www.exchangerate-api.com/` | `EXCHANGERATE_API_KEY="<Ключ_платформы>"` - macOS, Linux <br> `$env:EXCHANGERATE_API_KEY="<Ключ_платформы>"` - Windows |
 
 CoinGecko отвечает за криптовалюты (используется учебный ключ от Яндекс Практикума), ExchangeRate-API — за фиатные.
 Обе платформы нужны для Parser Service — это отдельный сервис, который по расписанию или по запросу обращается к публичным API, получает курсы, приводит их к единому JSON-формату и сохраняет актуальные значения в файл exchange_rates.json. Он ведёт подробный журнал: фиксирует каждую операцию, время обновления и возможные ошибки. Запустить его можно вручную через CLI-команду update-rates или настроить автоматический запуск по таймеру.
@@ -70,6 +70,9 @@ CoinGecko отвечает за криптовалюты (используетс
 ## Управление приложением
 
 ### Команды
+
+Структура: command --key value
+То есть сначала указывается команда, затем её ключ (параметр), и затем значение.
 
 `````
 register --username ИМЯ --password ПАРОЛЬ - Регистрация нового пользователя

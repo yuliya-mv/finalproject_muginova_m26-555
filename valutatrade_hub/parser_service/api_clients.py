@@ -6,7 +6,7 @@ import requests
 
 from valutatrade_hub.core.exceptions import ApiRequestError
 from valutatrade_hub.logging_config import get_logger
-from valutatrade_hub.parser_service.config import ParserConfig
+from valutatrade_hub.parser_service.config import CRYPTO_ID_MAP, ParserConfig
 
 _logger = get_logger("valutatrade_hub.parser")
 
@@ -15,7 +15,6 @@ class BaseApiClient(ABC):
     """Базовый класс для всех API-клиентов Parser Service."""
 
     def __init__(self, config: ParserConfig) -> None:
-        """Сохранить конфигурацию и запомнить таймаут."""
         self.config = config
         self.timeout = config.REQUEST_TIMEOUT
 
@@ -31,9 +30,9 @@ class CoinGeckoClient(BaseApiClient):
         """Запросить курсы криптовалют у CoinGecko."""
         codes = list(self.config.CRYPTO_CURRENCIES)
         ids = [
-            self.config.CRYPTO_ID_MAP[code]
+            CRYPTO_ID_MAP[code]
             for code in codes
-            if code in self.config.CRYPTO_ID_MAP
+            if code in CRYPTO_ID_MAP
         ]
 
         if not ids:
@@ -58,9 +57,9 @@ class CoinGeckoClient(BaseApiClient):
                 timeout=self.timeout,
             )
         except requests.exceptions.RequestException as error:
-            _logger.exception("CoinGecko: сетевая ошибка.")
+            _logger.exception("CoinGecko: ошибка сети.")
             raise ApiRequestError(
-                f"CoinGecko: сетевая ошибка ({error})"
+                f"CoinGecko: ошибка сети ({error})"
             ) from error
 
         if response.status_code != 200:
@@ -78,14 +77,14 @@ class CoinGeckoClient(BaseApiClient):
         except ValueError as error:
             _logger.exception("CoinGecko: некорректный JSON.")
             raise ApiRequestError(
-                "CoinGecko: некорректный JSON в ответе"
+                "CoinGecko: некорректный JSON."
             ) from error
 
         base = self.config.BASE_CURRENCY.upper()
         result: dict[str, float] = {}
 
         for code in codes:
-            coin_id = self.config.CRYPTO_ID_MAP.get(code)
+            coin_id = CRYPTO_ID_MAP.get(code)
             if coin_id is None:
                 continue
 
@@ -105,7 +104,7 @@ class ExchangeRateApiClient(BaseApiClient):
     """Клиент ExchangeRate-API — получает курсы фиатных валют к USD"""
 
     def fetch_rates(self) -> dict[str, float]:
-        """Запросить курсы фиатных валют у ExchangeRate-API."""
+        """Получить курсы фиатных валют через ExchangeRate-API."""
         api_key = self.config.get_api_key()
         base = self.config.BASE_CURRENCY.upper()
         url = (
@@ -118,9 +117,9 @@ class ExchangeRateApiClient(BaseApiClient):
         try:
             response = requests.get(url, timeout=self.timeout)
         except requests.exceptions.RequestException as error:
-            _logger.exception("ExchangeRate-API: сетевая ошибка.")
+            _logger.exception("ExchangeRate-API: ошибка сети.")
             raise ApiRequestError(
-                f"ExchangeRate-API: сетевая ошибка ({error})"
+                f"ExchangeRate-API: ошибка сети ({error})"
             ) from error
 
         if response.status_code != 200:
@@ -138,7 +137,7 @@ class ExchangeRateApiClient(BaseApiClient):
         except ValueError as error:
             _logger.exception("ExchangeRate-API: некорректный JSON.")
             raise ApiRequestError(
-                "ExchangeRate-API: некорректный JSON в ответе"
+                "ExchangeRate-API: некорректный JSON."
             ) from error
 
         if payload.get("result") != "success":
@@ -154,7 +153,7 @@ class ExchangeRateApiClient(BaseApiClient):
         conversion_rates = payload.get("conversion_rates", {})
         if not isinstance(conversion_rates, dict):
             raise ApiRequestError(
-                "ExchangeRate-API: в ответе нет conversion_rates"
+                "ExchangeRate-API: нет conversion_rates"
             )
 
         result: dict[str, float] = {}

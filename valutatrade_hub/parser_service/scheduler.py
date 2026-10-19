@@ -1,4 +1,4 @@
-"""Планировщик периодического обновления курсов."""
+"""Планировщик для периодического обновления курсов."""
 
 import time
 
@@ -15,7 +15,7 @@ _logger = get_logger("valutatrade_hub.parser")
 
 
 def build_updater(config: ParserConfig) -> RatesUpdater:
-    """Собрать RatesUpdater с обоими клиентами."""
+    """Собрать обновление с обоими API-клиентами."""
     clients = [
         ("CoinGecko", CoinGeckoClient(config)),
         ("ExchangeRate-API", ExchangeRateApiClient(config)),
@@ -34,14 +34,14 @@ def run_forever(interval_seconds: int | None = None) -> None:
     updater = build_updater(config)
 
     _logger.info(
-        "Scheduler started, interval=%s сек.", interval
+        "Обновление запланировано, интервал=%s сек.", interval
     )
 
     while True:
         try:
             updater.run_update()
-        except Exception as error:  # noqa: BLE001
-            _logger.exception("Scheduler update failed: %s", error)
+        except Exception as error:
+            _logger.exception("Планируемое обновление не завершено: %s", error)
 
         _logger.info("Scheduler: ожидание %s сек.", interval)
         time.sleep(interval)

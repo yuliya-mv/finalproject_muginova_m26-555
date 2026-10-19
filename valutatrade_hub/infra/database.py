@@ -1,36 +1,31 @@
-"""Работа с JSON-хранилищем приложения."""
+"""Работа с JSON-хранилищем"""
 
 import json
-import os
-import tempfile
 from pathlib import Path
-from typing import Any
 
 from valutatrade_hub.infra.settings import SettingsLoader
 
 
 class DatabaseManager:
-    """Единый объект для доступа к JSON-файлам приложения."""
+    """Менеджер JSON-файлов с использованием Singleton."""
 
     _instance = None
 
     def __new__(cls):
-        """Создать только один экземпляр класса."""
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
         return cls._instance
 
     def __init__(self) -> None:
-        """Подготовить пути к файлам данных один раз."""
-        if self._initialized:
+        if getattr(self, "_initialized", False):
             return
 
-        project_root = Path(__file__).resolve().parents[2]
-        data_dir = Path(SettingsLoader().get("data_dir", "data"))
+        self.settings = SettingsLoader()
+        self.project_root = Path(__file__).resolve().parents[2]
 
+        data_dir = Path(self.settings.get("data_dir", "data"))
         if not data_dir.is_absolute():
-            data_dir = project_root / data_dir
+            data_dir = self.project_root / data_dir
 
         self._paths = {
             "users": data_dir / "users.json",
@@ -38,14 +33,21 @@ class DatabaseManager:
             "rates": data_dir / "rates.json",
             "exchange_rates": data_dir / "exchange_rates.json",
         }
+
         self._initialized = True
 
-    def load(self, name: str, default: Any = None) -> Any:
-        """Загрузить данные из выбранного JSON-файла."""
-        path = self._get_path(name)
+    def get_path(self, key: str) -> Path:
+        """Получить путь к файлу."""
+        try:
+            return self._paths[key]
+        except KeyError as error:
+            raise ValueError(f"Неизвестное хранилище: {key}") from error
+
+    def load(self, key: str, default=None):
+        path = self.get_path(key)
 
         if not path.exists() or path.stat().st_size == 0:
-            return default if default is not None else {}
+            return default
 
         try:
             with path.open("r", encoding="utf-8") as file:
@@ -53,32 +55,15 @@ class DatabaseManager:
         except json.JSONDecodeError as error:
             raise ValueError(f"Некорректный JSON в файле {path}") from error
 
-    def save(self, name: str, data: Any) -> None:
-        """Атомарно сохранить данные в выбранный JSON-файл."""
-        path = self._get_path(name)
+    def save(self, key: str, data) -> None:
+        """Сохранить данные в JSON-файл."""
+        path = self.get_path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = None
 
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=path.parent,
-                suffix=".tmp",
-                delete=False,
-            ) as file:
-                temp_path = file.name
-                json.dump(data, file, ensure_ascii=False, indent=4)
-                file.write("\n")
+        temp_path = path.with_suffix(path.suffix + ".tmp")
 
-            os.replace(temp_path, path)
-        finally:
-            if temp_path is not None and os.path.exists(temp_path):
-                os.unlink(temp_path)
+        with temp_path.open("w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=4)
+            file.write("\n")
 
-    def _get_path(self, name: str) -> Path:
-        """Вернуть путь к файлу по его логическому имени."""
-        try:
-            return self._paths[name]
-        except KeyError as error:
-            raise ValueError(f"Неизвестное хранилище: {name}") from error
+        temp_path.replace(path)

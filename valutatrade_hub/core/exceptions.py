@@ -1,41 +1,33 @@
-"""Пользовательские исключения приложения ValutaTrade Hub."""
+"""Пользовательские исключения ValutaTrade Hub."""
 
 
 class ValutaTradeError(Exception):
-    """Базовое исключение приложения ValutaTrade Hub."""
+    """Базовое исключение ValutaTrade Hub."""
 
 
 class ValidationError(ValutaTradeError):
-    """Ошибка валидации входных данных."""
+    """Данные неверные: занят логин, ошибка суммы и пр."""
 
 
 class UserNotFoundError(ValutaTradeError):
     """Пользователь не найден."""
 
-    def __init__(self, username: str) -> None:
-        """Создать исключение для отсутствующего пользователя."""
+    def __init__(self, username: str):
         self.username = username
         super().__init__(f"Пользователь '{username}' не найден")
 
 
 class InvalidPasswordError(ValutaTradeError):
-    """Неверный пароль."""
+    """Пароль неправильный."""
 
-    def __init__(self, message: str = "Неверный пароль") -> None:
-        """Создать исключение о неверном пароле."""
-        super().__init__(message)
+    def __init__(self):
+        super().__init__("Неверный пароль")
 
 
 class InsufficientFundsError(ValutaTradeError):
-    """Исключение при недостаточном балансе кошелька."""
+    """На баланесе недостаточно средств."""
 
-    def __init__(
-        self,
-        available: float,
-        required: float,
-        currency_code: str,
-    ) -> None:
-        """Создать исключение с доступной и требуемой суммами."""
+    def __init__(self, available: float, required: float, currency_code: str):
         self.available = available
         self.required = required
         self.currency_code = currency_code
@@ -48,18 +40,16 @@ class InsufficientFundsError(ValutaTradeError):
 
 
 class CurrencyNotFoundError(ValutaTradeError):
-    """Исключение при обращении к неизвестной валюте."""
+    """Валюта отсутствует в списке известных."""
 
-    def __init__(self, code: str) -> None:
-        """Создать исключение для неизвестного кода валюты."""
+    def __init__(self, code: str):
         self.code = code
-        super().__init__(f"Неизвестная валюта '{code}'")
+        super().__init__(f"Неизвестная валюта '{code}'. Проверьте код валюты")
 
 
 class ApiRequestError(ValutaTradeError):
-    """Исключение при ошибке обращения к внешнему API."""
+    """Ошибка обращения к внешнему API."""
 
-    def __init__(self, reason: str) -> None:
-        """Создать исключение с описанием причины ошибки."""
+    def __init__(self, reason: str):
         self.reason = reason
         super().__init__(f"Ошибка при обращении к внешнему API: {reason}")

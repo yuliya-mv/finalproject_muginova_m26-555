@@ -22,14 +22,13 @@ class ValutaTradeService:
     """Выполнение операций с пользователями, портфелями и курсами."""
 
     def __init__(self) -> None:
-        """Подготовить доступ к настройкам и хранилищу."""
+        """Доступ к настройкам и хранилищу."""
         self.database = DatabaseManager()
         self.settings = SettingsLoader()
         self.current_user: User | None = None
 
     @log_action("REGISTER")
     def register(self, username: str, password: str) -> User:
-        """Зарегистрировать нового пользователя."""
         if not isinstance(username, str) or not username.strip():
             raise ValueError("Имя пользователя не должно быть пустым")
         if not isinstance(password, str) or len(password) < 4:
@@ -59,7 +58,7 @@ class ValutaTradeService:
 
     @log_action("LOGIN")
     def login(self, username: str, password: str) -> User:
-        """Войти в приложение и установить текущего пользователя."""
+        """Войти в приложение и залогинить пользователя."""
         users = self._load_users()
 
         found: dict | None = None
@@ -79,7 +78,6 @@ class ValutaTradeService:
         return user
 
     def get_portfolio(self) -> Portfolio:
-        """Получить портфель текущего пользователя."""
         user = self._require_login()
         portfolios = self._load_portfolios()
 
@@ -98,7 +96,7 @@ class ValutaTradeService:
         return Portfolio(user.user_id, wallets, user)
 
     def show_portfolio(self, base_currency: str = "USD") -> dict[str, Any]:
-        """Вернуть данные портфеля."""
+        """Показать данные портфеля."""
         validate_currency_code(base_currency)
 
         portfolio = self.get_portfolio()
@@ -145,7 +143,6 @@ class ValutaTradeService:
         amount: float,
         user_id: int | None = None,
     ) -> dict[str, Any]:
-        """Купить валюту залогиненным пользователем."""
         user = self._require_login()
         if user_id is not None and user_id != user.user_id:
             raise ValidationError(
@@ -190,7 +187,6 @@ class ValutaTradeService:
         amount: float,
         user_id: int | None = None,
     ) -> dict[str, Any]:
-        """Продать валюту залогиненного пользователя."""
         user = self._require_login()
         if user_id is not None and user_id != user.user_id:
             raise ValidationError(
@@ -276,7 +272,6 @@ class ValutaTradeService:
         }
 
     def _require_login(self) -> User:
-        """Сообщить об отсутствии входа."""
         if self.current_user is None:
             raise ValidationError("Сначала выполните login")
         return self.current_user
@@ -295,35 +290,22 @@ class ValutaTradeService:
 
     @staticmethod
     def _validate_amount(amount: float) -> float:
-        """Проверка, что сумма положительная."""
-        error_message = "'amount' должен быть положительным числом"
         if isinstance(amount, bool) or not isinstance(amount, (int, float)):
-            raise ValidationError(error_message)
+            raise ValidationError("'amount' должен быть положительным числом")
 
-        try:
-            numeric_amount = float(amount)
-        except (OverflowError, ValueError):
-            raise ValidationError(error_message) from None
-
-        if (
-            numeric_amount <= 0
-            or numeric_amount != numeric_amount
-            or numeric_amount == float("inf")
-            or numeric_amount == float("-inf")
-        ):
-            raise ValidationError(error_message)
+        numeric_amount = float(amount)
+        if amount <= 0:
+            raise ValidationError("'amount' должен быть положительным числом")
 
         return numeric_amount
 
     def _load_users(self) -> list:
-        """Загрузить список пользователей."""
         users = self.database.load("users", [])
         if isinstance(users, dict):
             users = list(users.values())
         return users
 
     def _load_portfolios(self) -> list:
-        """Загрузить список портфелей."""
         portfolios = self.database.load("portfolios", [])
         if isinstance(portfolios, dict):
             portfolios = list(portfolios.values())
@@ -331,14 +313,12 @@ class ValutaTradeService:
 
     @staticmethod
     def _find_portfolio(portfolios: list, user_id: int) -> dict | None:
-        """Найти портфель по user_id в списке."""
         for portfolio in portfolios:
             if int(portfolio.get("user_id", -1)) == user_id:
                 return portfolio
         return None
 
     def _save_portfolio(self, portfolio: Portfolio) -> None:
-        """Сохранить кошельки портфеля в portfolios.json"""
         portfolios = self._load_portfolios()
 
         wallets: dict[str, dict] = {}
@@ -362,7 +342,6 @@ class ValutaTradeService:
         self.database.save("portfolios", portfolios)
 
     def _load_rates(self) -> dict:
-        """Загрузить курсы."""
         data = self.database.load("rates", {})
         if not isinstance(data, dict):
             return {}
@@ -425,11 +404,10 @@ class ValutaTradeService:
             pass
 
     def _get_rate_value(self, source: str, target: str) -> float | None:
-        """Получить курс."""
         try:
             rates = self._load_rates()
             return self._find_rate(rates, source, target)
-        except Exception:
+        except (KeyError, ValueError, TypeError):
             return None
 
     def _find_rate(
@@ -444,9 +422,8 @@ class ValutaTradeService:
         direct = rates.get(f"{source}_{target}")
         if direct is not None:
             value = direct.get("rate") if isinstance(direct, dict) else direct
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                if value > 0:
-                    return float(value)
+            if isinstance(value, (int, float)) and value > 0:
+                return float(value)
 
         source_usd = self._usd_rate(rates, source)
         target_usd = self._usd_rate(rates, target)
@@ -465,10 +442,9 @@ class ValutaTradeService:
         value = rates.get(f"{currency_code}_USD")
         if isinstance(value, dict):
             value = value.get("rate")
-
-        if isinstance(value, (int, float)) and not isinstance(value, bool):
-            if value > 0:
-                return float(value)
+            
+        if isinstance(value, (int, float)) and value > 0:
+            return float(value)
 
         return None
 

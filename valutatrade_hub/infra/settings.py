@@ -1,16 +1,15 @@
-"""Настройки приложения ValutaTrade Hub."""
+"""Загрузчик настроек (Singleton)."""
 
 import tomllib
 from pathlib import Path
-from typing import Any
 
 
 class SettingsLoader:
-    """Единый объект для доступа к настройкам приложения."""
+    """Загрузчик настроек с использованием Singleton. __new__ выбран из-за простоты"""
 
-    _instance: "SettingsLoader | None" = None
+    _instance = None
 
-    _DEFAULTS: dict[str, Any] = {
+    _DEFAULTS = {
         "data_dir": "data",
         "base_currency": "USD",
         "rates_ttl_seconds": 300,
@@ -18,29 +17,33 @@ class SettingsLoader:
         "log_level": "INFO",
     }
 
-    _PYPROJECT_PATH = Path(__file__).resolve().parents[2] / "pyproject.toml"
-
-    def __new__(cls) -> "SettingsLoader":
-        """Создать только один экземпляр класса.
-
-        Способ через __new__ выбран, потому что он простой и
-        явный: приложение не должно создавать несколько
-        загрузчиков настроек.
-        """
+    def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._settings = cls._instance._load_settings()
         return cls._instance
 
-    @classmethod
-    def _load_settings(cls) -> dict[str, Any]:
-        """Загрузить настройки из pyproject.toml поверх значений по умолчанию."""
-        settings = dict(cls._DEFAULTS)
+    def __init__(self) -> None:
+        """Загрузить настройки из pyproject.toml"""
+        if getattr(self, "_initialized", False):
+            return
+
+        project_root = Path(__file__).resolve().parents[2]
+        self.settings_path = project_root / "pyproject.toml"
+        self._settings = self._load_settings()
+
+        self._initialized = True
+
+    def _load_settings(self) -> dict:
+        """Прочитать [tool.valutatrade] из pyproject.toml"""
+        settings = dict(self._DEFAULTS)
+
+        if not self.settings_path.exists():
+            return settings
 
         try:
-            with cls._PYPROJECT_PATH.open("rb") as file:
+            with self.settings_path.open("rb") as file:
                 pyproject = tomllib.load(file)
-        except (OSError, tomllib.TOMLDecodeError):
+        except tomllib.TOMLDecodeError:
             return settings
 
         section = pyproject.get("tool", {}).get("valutatrade", {})
@@ -49,18 +52,16 @@ class SettingsLoader:
 
         return settings
 
-    def get(self, key: str, default: Any = None) -> Any:
-        """Получить настройку по имени."""
+    def get(self, key, default=None):
         return self._settings.get(key, default)
 
-    def set(self, key: str, value: Any) -> None:
-        """Изменить настройку в текущем экземпляре."""
+    def set(self, key, value) -> None:
         self._settings[key] = value
 
-    def get_data_path(self, filename: str) -> Path:
-        """Получить путь к файлу в каталоге данных."""
-        return Path(self.get("data_dir", "data")) / filename
+    def all(self):
+        return self._settings.copy()
 
     def reload(self) -> None:
-        """Перезагрузить настройки из pyproject.toml."""
-        self._settings = self._load_settings()
+        """Перезагрузить настройки из pyproject.toml"""
+        self._initialized = False
+        self.__init__()

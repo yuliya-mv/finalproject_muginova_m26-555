@@ -16,7 +16,7 @@ EXCHANGE_RATES: dict[str, float] = {
 def validate_currency_code(code: str) -> str:
     """Проверить код валюты и вернуть его в верхнем регистре."""
     if not isinstance(code, str) or not code.strip():
-        raise ValueError("Код валюты не должен быть пустым")
+        raise ValueError("Код валюты не должен быть пустым.")
 
     normalized_code = code.strip().upper()
     get_currency(normalized_code)
@@ -52,10 +52,10 @@ def convert_currency(
 ) -> float:
     """Конвертировать сумму через USD на основе переданных курсов."""
     if isinstance(amount, bool) or not isinstance(amount, (int, float)):
-        raise ValueError("Сумма должна быть числом")
+        raise ValueError("Сумма должна быть числом.")
 
     if amount < 0:
-        raise ValueError("Сумма не может быть отрицательной")
+        raise ValueError("Сумма не может быть отрицательной.")
 
     source = validate_currency_code(from_currency)
     target = validate_currency_code(to_currency)

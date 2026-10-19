@@ -23,7 +23,6 @@ from valutatrade_hub.parser_service.scheduler import build_updater
 
 
 def _print_help() -> None:
-    """Вывести список доступных команд."""
     print(
         "Доступные команды:\n"
         "  register --username ИМЯ --password ПАРОЛЬ\n"
@@ -40,7 +39,7 @@ def _print_help() -> None:
 
 
 def _parse_options(arguments: list[str]) -> dict[str, str]:
-    """Преобразовать аргументы вида --ключ значение в словарь."""
+    """Преобразовать ключи в словарь."""
     options: dict[str, str] = {}
     index = 0
 
@@ -48,7 +47,7 @@ def _parse_options(arguments: list[str]) -> dict[str, str]:
         key = arguments[index]
 
         if not key.startswith("--"):
-            raise ValueError(f"Неожиданный аргумент: {key}")
+            raise ValueError(f"Параметр должен начинаться с --, факт: {key}")
 
         if index + 1 >= len(arguments):
             raise ValueError(f"Для параметра {key} не указано значение")
@@ -63,7 +62,6 @@ def _parse_options(arguments: list[str]) -> dict[str, str]:
 
 
 def _required_option(options: dict[str, str], key: str) -> str:
-    """Получить обязательный параметр команды."""
     value = options.get(key)
     if value is None or not value.strip():
         raise ValueError(f"Необходимо указать параметр {key}")
@@ -71,12 +69,10 @@ def _required_option(options: dict[str, str], key: str) -> str:
 
 
 def _format_money(value: float) -> str:
-    """Отформатировать сумму с разделителями тысяч."""
     return f"{value:,.2f}"
 
 
 def _print_portfolio(service: ValutaTradeService, base_currency: str) -> None:
-    """Вывести портфель пользователя в виде таблицы PrettyTable."""
     result = service.show_portfolio(base_currency)
 
     username = result["username"]
@@ -103,9 +99,9 @@ def _print_portfolio(service: ValutaTradeService, base_currency: str) -> None:
     print(f"ИТОГО: {_format_money(result['total_value'])} {base}")
 
     if result.get("missing_rate"):
-        print("Внимание: для некоторых валют нет курса.")
+        print("Для некоторых валют нет курса.")
     if result.get("is_stale"):
-        print("Курсы устарели. Выполните update-rates.")
+        print("Курсы устарели, выполните update-rates.")
 
 
 def _execute_command(
@@ -113,7 +109,7 @@ def _execute_command(
     command: str,
     arguments: list[str],
 ) -> bool:
-    """Выполнить команду. Вернуть False для завершения приложения."""
+    """Выполнение команд."""
     if command == "exit":
         return False
 
@@ -272,11 +268,11 @@ def _execute_command(
         )
 
         if result.get("is_stale"):
-            print("Курсы устарели. Выполните update-rates.")
+            print("Курсы устарели, выполните update-rates.")
 
     else:
         raise ValueError(
-            f"Неизвестная команда: {command}. Введите help для справки."
+            f"Неизвестная команда: {command}, откройте help."
         )
 
     return True
@@ -296,7 +292,7 @@ def _run_update_rates(source_filter: str | None) -> None:
         ]
         if not filtered:
             raise ValueError(
-                f"Неизвестный источник: {source_filter}. "
+                f"Нет источника: {source_filter}. "
                 "Доступны: CoinGecko, ExchangeRate-API."
             )
         updater.clients = filtered
@@ -313,15 +309,14 @@ def _run_update_rates(source_filter: str | None) -> None:
 
     if errors:
         print(
-            "Update completed with errors. "
-            f"Updated: {count}. "
-            "Check logs/parser.log for details."
+            "Есть ошибки обновления."
+            f"Обновлено: {count}. Проверьте logs/parser.log"
         )
     else:
         print(
-            "Update successful. "
-            f"Total rates updated: {count}. "
-            f"Last refresh: {last_refresh}"
+            "Обновление завершено. "
+            f"Обновлено: {count}. "
+            f"Последняя синхронизация: {last_refresh}"
         )
 
 
@@ -338,8 +333,7 @@ def _print_rates(options: dict[str, str]) -> None:
 
     if not pairs:
         print(
-            "Локальный кеш курсов пуст. "
-            "Выполните 'update-rates', чтобы загрузить данные."
+            "Локальный кеш курсов пуст, выполните update-rates."
         )
         return
 
@@ -409,7 +403,6 @@ def _print_rates(options: dict[str, str]) -> None:
 
 
 def _handle_command(service: ValutaTradeService, command_line: str) -> bool:
-    """Разобрать и выполнить одну команду."""
     try:
         parts = shlex.split(command_line)
 
@@ -422,12 +415,11 @@ def _handle_command(service: ValutaTradeService, command_line: str) -> bool:
         print(str(error))
         codes = ", ".join(sorted(list_currencies().keys()))
         print(f"Поддерживаемые коды: {codes}")
-        print("Справка: help get-rate")
         return True
 
     except ApiRequestError as error:
         print(str(error))
-        print("Повторите попытку позже или проверьте подключение к сети.")
+        print("API недоступен, повторите попытку позже.")
         return True
 
     except InsufficientFundsError as error:
@@ -440,7 +432,6 @@ def _handle_command(service: ValutaTradeService, command_line: str) -> bool:
 
 
 def run() -> None:
-    """Запустить интерактивный командный интерфейс."""
     settings = SettingsLoader()
     setup_logging(
         log_file=settings.get("log_file", "logs/actions.log"),
@@ -449,8 +440,7 @@ def run() -> None:
 
     service = ValutaTradeService()
     print(
-        "ValutaTrade Hub. Введите help для списка команд, "
-        "exit для выхода."
+        "Welcome to ValutaTrade Hub. Введите help для списка команд, exit для выхода."
     )
 
     while True:

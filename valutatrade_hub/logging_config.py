@@ -19,7 +19,7 @@ def setup_logging(
     log_file: str = "logs/actions.log",
     level: str = "INFO",
 ) -> None:
-    """Настроить корневой логгер приложения (actions.log + консоль)."""
+    """Настроить actions.log + консоль."""
     global _CONFIGURED
     if _CONFIGURED:
         return
@@ -99,5 +99,4 @@ def detach_console_handler(handler: logging.Handler) -> None:
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Вернуть логгер с заданным именем."""
     return logging.getLogger(name)
